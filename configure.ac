@@ -21,7 +21,9 @@ AC_CHECK_HEADERS([errno.h \
 		  stddef.h \
 		  stdlib.h \
 		  string.h \
-		  sys/types.h])
+		  sys/types.h \
+		  ctype.h \
+		  malloc.h])
 
 PKG_CHECK_MODULES([LIBNTFS_3G], [libntfs-3g >= 2016.2.22AR], [],
 		  [AC_MSG_ERROR(["Unable to find libntfs-3g"])])
