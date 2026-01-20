@@ -33,7 +33,7 @@ clangsharp_args(){
 	-m Ntfs3g \
 	-l ntfs-3g \
 	-om CSharp \
-	-o src
+	-o ntfs-3g
 }
 
 hide_fn(){
