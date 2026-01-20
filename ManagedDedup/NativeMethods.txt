@@ -1,0 +1,9 @@
+CreateFile
+DeviceIoControl
+MAXIMUM_REPARSE_DATA_BUFFER_SIZE
+FSCTL_GET_REPARSE_POINT
+LookupPrivilegeValue
+GetCurrentProcess
+AdjustTokenPrivileges
+OpenProcessToken
+SE_BACKUP_NAME
