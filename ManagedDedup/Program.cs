@@ -7,20 +7,102 @@
  */
 #endregion
 using ManagedDedup;
+using ManagedDedup.Cygwin;
 using Microsoft.Win32.SafeHandles;
+using Ntfs3gInterop;
+using Smx.SharpIO.Memory;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using Windows.Win32;
 using Windows.Win32.Security;
 using Windows.Win32.Storage.FileSystem;
 
 namespace Smx.ManagedDedup;
 
+public unsafe struct ProgramArgv
+{
+    public delegate* unmanaged[Cdecl]<uint, plugin_operations*> InitFn;
+    public delegate* unmanaged[Cdecl]<int, void> SetErrno;
+}
+
 public class Program
 {
     private string[] _args;
+    private readonly TypedPointer<ProgramArgv> _argsNative;
+
+    private delegate void MainDelegate(string[] args);
+
+    private static bool IsRunningInCygwin()
+    {
+        return !PInvoke.GetModuleHandle("cygwin1").IsInvalid;
+    }
+
+    private static string[] ReadArgv(IntPtr args, int sizeBytes)
+    {
+        int nargs = sizeBytes / IntPtr.Size;
+        string[] argv = new string[nargs];
+
+        for (int i = 0; i < nargs; i++, args += IntPtr.Size)
+        {
+            IntPtr charPtr = Marshal.ReadIntPtr(args);
+            argv[i] = Marshal.PtrToStringAnsi(charPtr);
+        }
+        return argv;
+    }
+
+    public static int Entry(IntPtr args, int sizeBytes)
+    {
+        var argv = ReadArgv(args, sizeBytes);
+
+        Action<MainDelegate> initializer;
+
+        if (
+            RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+            IsRunningInCygwin()
+        )
+        {
+            initializer = (main) => {
+                var stdin = new StreamReader(new CygwinInputStream(0));
+                var stdout = new StreamWriter(new CygwinOutputStream(1));
+                var stderr = new StreamWriter(new CygwinOutputStream(2));
+
+                stdout.AutoFlush = true;
+                stderr.AutoFlush = true;
+
+                _pinnedObjects.Add(stdin);
+                _pinnedObjects.Add(stdout);
+                _pinnedObjects.Add(stderr);
+
+                Console.SetIn(stdin);
+                Console.SetOut(stdout);
+                Console.SetError(stderr);
+
+                main(argv);
+
+            };
+        } else
+        {
+            initializer = (main) => {
+                main(argv);
+            };
+        }
+
+        try
+        {
+            initializer(Main);
+        } catch (Exception e)
+        {
+            Console.Error.WriteLine("Unhandled Exception");
+            Console.Error.WriteLine(e.ToString());
+        }
+        return 0;
+    }
 
     private static SafeFileHandle OpenProcessToken(SafeFileHandle hProc, TOKEN_ACCESS_MASK flags)
     {
@@ -63,6 +145,11 @@ public class Program
         }
     }
 
+    /// <summary>
+    /// stores references to objects we don't want to be GC'd
+    /// </summary>
+    private static List<object> _pinnedObjects = new List<object>();
+
     public Program(string[] args)
     {
         _args = args;
@@ -70,6 +157,28 @@ public class Program
         for(var i=0; i<args.Length; i++)
         {
             Console.WriteLine($"[{i}]: {args[i]}");
+        }
+
+        if (args[0] == "--ezdotnet")
+        {
+            _pinnedObjects.Add(this);
+
+            if (Environment.GetEnvironmentVariable("EZ_DEBUG")?.Equals("1") ?? false)
+            {
+                if (!Debugger.IsAttached && Debugger.Launch())
+                {
+                    while (!Debugger.IsAttached)
+                    {
+                        Thread.Sleep(200);
+                    }
+                }
+            }
+
+            var argsPtr = new TypedPointer<ProgramArgv>(nint.Parse(args[1].Replace("0x", ""), System.Globalization.NumberStyles.HexNumber));
+            _argsNative = argsPtr;
+
+            var plugin = new Ntfs3gDedupPlugin(argsPtr);
+            _pinnedObjects.Add(plugin);
         }
     }
 
@@ -131,6 +240,12 @@ public class Program
     {
         // Enable SE_BACKUP_NAME to access "System Volume Information"
         EnablePrivilege(PInvoke.SE_BACKUP_NAME);
+
+        if(_argsNative.Address != 0)
+        {
+            // running in hosted mode, abort
+            return;
+        }
 
         using var fh = new FileStream("log.txt", FileMode.OpenOrCreate, FileAccess.Write, FileShare.Read);
         fh.SetLength(0);

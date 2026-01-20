@@ -4,13 +4,14 @@ EXTRA_DIST = README COPYING
 
 plugindir = $(libdir)/ntfs-3g
 
-FUSE_CFLAGS = $(FUSE_MODULE_CFLAGS)
+FUSE_CFLAGS = $(FUSE_MODULE_CFLAGS) -DUSE_DOTNET
 FUSE_LIBS   = $(FUSE_MODULE_LIBS)
 
 plugin_LTLIBRARIES = ntfs-plugin-80000013.la
 
 ntfs_plugin_80000013_la_SOURCES =	\
-	src/dedup.c
+	src/dedup.c \
+	src/dotnet.c
 
 ntfs_plugin_80000013_la_LDFLAGS  = -module -shared -avoid-version -no-undefined
 ntfs_plugin_80000013_la_CPPFLAGS = -D_FILE_OFFSET_BITS=64

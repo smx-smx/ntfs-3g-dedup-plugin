@@ -1,0 +1,37 @@
+namespace Ntfs3gInterop
+{
+    public enum PREDEFINED_REPARSE_TAGS
+    {
+        IO_REPARSE_TAG_DIRECTORY = unchecked((int)((uint)(0x10000000))),
+        IO_REPARSE_TAG_IS_ALIAS = unchecked((int)((uint)(0x20000000))),
+        IO_REPARSE_TAG_IS_HIGH_LATENCY = unchecked((int)((uint)(0x40000000))),
+        IO_REPARSE_TAG_IS_MICROSOFT = unchecked((int)((uint)(0x80000000))),
+        IO_REPARSE_TAG_RESERVED_ZERO = unchecked((int)((uint)(0x00000000))),
+        IO_REPARSE_TAG_RESERVED_ONE = unchecked((int)((uint)(0x00000001))),
+        IO_REPARSE_TAG_RESERVED_RANGE = unchecked((int)((uint)(0x00000001))),
+        IO_REPARSE_TAG_CSV = unchecked((int)((uint)(0x80000009))),
+        IO_REPARSE_TAG_DEDUP = unchecked((int)((uint)(0x80000013))),
+        IO_REPARSE_TAG_DFS = unchecked((int)((uint)(0x8000000A))),
+        IO_REPARSE_TAG_DFSR = unchecked((int)((uint)(0x80000012))),
+        IO_REPARSE_TAG_HSM = unchecked((int)((uint)(0xC0000004))),
+        IO_REPARSE_TAG_HSM2 = unchecked((int)((uint)(0x80000006))),
+        IO_REPARSE_TAG_MOUNT_POINT = unchecked((int)((uint)(0xA0000003))),
+        IO_REPARSE_TAG_NFS = unchecked((int)((uint)(0x80000014))),
+        IO_REPARSE_TAG_SIS = unchecked((int)((uint)(0x80000007))),
+        IO_REPARSE_TAG_SYMLINK = unchecked((int)((uint)(0xA000000C))),
+        IO_REPARSE_TAG_WIM = unchecked((int)((uint)(0x80000008))),
+        IO_REPARSE_TAG_DFM = unchecked((int)((uint)(0x80000016))),
+        IO_REPARSE_TAG_WOF = unchecked((int)((uint)(0x80000017))),
+        IO_REPARSE_TAG_WCI = unchecked((int)((uint)(0x80000018))),
+        IO_REPARSE_TAG_CLOUD = unchecked((int)((uint)(0x9000001A))),
+        IO_REPARSE_TAG_APPEXECLINK = unchecked((int)((uint)(0x8000001B))),
+        IO_REPARSE_TAG_GVFS = unchecked((int)((uint)(0x9000001C))),
+        IO_REPARSE_TAG_LX_SYMLINK = unchecked((int)((uint)(0xA000001D))),
+        IO_REPARSE_TAG_AF_UNIX = unchecked((int)((uint)(0x80000023))),
+        IO_REPARSE_TAG_LX_FIFO = unchecked((int)((uint)(0x80000024))),
+        IO_REPARSE_TAG_LX_CHR = unchecked((int)((uint)(0x80000025))),
+        IO_REPARSE_TAG_LX_BLK = unchecked((int)((uint)(0x80000026))),
+        IO_REPARSE_TAG_VALID_VALUES = unchecked((int)((uint)(0xf000ffff))),
+        IO_REPARSE_PLUGIN_SELECT = unchecked((int)((uint)(0xffff0fff))),
+    }
+}

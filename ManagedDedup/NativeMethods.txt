@@ -7,3 +7,4 @@ GetCurrentProcess
 AdjustTokenPrivileges
 OpenProcessToken
 SE_BACKUP_NAME
+GetModuleHandle

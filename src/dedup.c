@@ -1402,12 +1402,32 @@ static const struct plugin_operations ops = {
 	.read = dedup_read,
 };
 
+#if USE_DOTNET
+#include <unistd.h>
+#include "dotnet.h"
+extern void dotnet_init();
+#endif
+
 /*
  *		Initialize the plugin and return its methods.
  */
 
 const struct plugin_operations *init(le32 tag)
 {
+#if USE_DOTNET
+	dotnet_init();
+	while(!dotnet_args.pfnInit){
+		puts("... wait");
+		usleep(1000 * 100);
+	}
+	if(!dotnet_args.pfnInit){
+		puts("dotnet didn't provide an init function");
+		errno = EINVAL;
+		return NULL;
+	}
+	puts("... call C# delegate");
+	return dotnet_args.pfnInit(tag);
+#else
 	const struct plugin_operations *pops;
 
 	pops = (const struct plugin_operations*)NULL;
@@ -1430,4 +1450,5 @@ const struct plugin_operations *init(le32 tag)
 	else
 		errno = EINVAL;
 	return (pops);
+#endif
 }

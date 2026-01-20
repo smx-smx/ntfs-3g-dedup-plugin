@@ -1,0 +1,35 @@
+namespace Ntfs3gInterop
+{
+    public enum ACCESS_MASK
+    {
+        FILE_READ_DATA = unchecked((int)((uint)(0x00000001))),
+        FILE_LIST_DIRECTORY = unchecked((int)((uint)(0x00000001))),
+        FILE_WRITE_DATA = unchecked((int)((uint)(0x00000002))),
+        FILE_ADD_FILE = unchecked((int)((uint)(0x00000002))),
+        FILE_APPEND_DATA = unchecked((int)((uint)(0x00000004))),
+        FILE_ADD_SUBDIRECTORY = unchecked((int)((uint)(0x00000004))),
+        FILE_READ_EA = unchecked((int)((uint)(0x00000008))),
+        FILE_WRITE_EA = unchecked((int)((uint)(0x00000010))),
+        FILE_EXECUTE = unchecked((int)((uint)(0x00000020))),
+        FILE_TRAVERSE = unchecked((int)((uint)(0x00000020))),
+        FILE_DELETE_CHILD = unchecked((int)((uint)(0x00000040))),
+        FILE_READ_ATTRIBUTES = unchecked((int)((uint)(0x00000080))),
+        FILE_WRITE_ATTRIBUTES = unchecked((int)((uint)(0x00000100))),
+        DELETE = unchecked((int)((uint)(0x00010000))),
+        READ_CONTROL = unchecked((int)((uint)(0x00020000))),
+        WRITE_DAC = unchecked((int)((uint)(0x00040000))),
+        WRITE_OWNER = unchecked((int)((uint)(0x00080000))),
+        SYNCHRONIZE = unchecked((int)((uint)(0x00100000))),
+        STANDARD_RIGHTS_READ = unchecked((int)((uint)(0x00020000))),
+        STANDARD_RIGHTS_WRITE = unchecked((int)((uint)(0x00020000))),
+        STANDARD_RIGHTS_EXECUTE = unchecked((int)((uint)(0x00020000))),
+        STANDARD_RIGHTS_REQUIRED = unchecked((int)((uint)(0x000f0000))),
+        STANDARD_RIGHTS_ALL = unchecked((int)((uint)(0x001f0000))),
+        ACCESS_SYSTEM_SECURITY = unchecked((int)((uint)(0x01000000))),
+        MAXIMUM_ALLOWED = unchecked((int)((uint)(0x02000000))),
+        GENERIC_ALL = unchecked((int)((uint)(0x10000000))),
+        GENERIC_EXECUTE = unchecked((int)((uint)(0x20000000))),
+        GENERIC_WRITE = unchecked((int)((uint)(0x40000000))),
+        GENERIC_READ = unchecked((int)((uint)(0x80000000))),
+    }
+}
