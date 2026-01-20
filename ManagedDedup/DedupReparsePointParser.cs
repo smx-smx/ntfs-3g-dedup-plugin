@@ -980,5 +980,7 @@ public class DedupReparsePointParser
         {
             throw new InvalidDataException("streamID mismatch");
         }
+
+        stream.ReadEntry(idRef, dedupInfo);
     }
 }
