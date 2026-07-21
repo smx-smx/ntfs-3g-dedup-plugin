@@ -48,9 +48,12 @@
  *
  *		Version 1.2.5, Aug 2018
  *	- in dedup_read_short(), loop until requested size is reached
+ *
+ *		Version 1.2.6, May 2026
+ *	- treat dedup format 0x0103 like 0x0102 (seen on Windows Server 2019)
  */
 
-#define DEDUP_VERSION "1.2.5"
+#define DEDUP_VERSION "1.2.6"
 
 #include "config.h"
 
@@ -1356,6 +1359,254 @@ static int dedup_read_short(ntfs_inode *ni, const REPARSE_POINT *reparse,
 }
 
 /*
+ *	Windows Server 2019+ often stores dedup reparse format 0x0103 as a
+ *	chunk stream (FeRp / RbRp / DdRp) instead of the legacy 0x0102 layout.
+ *	Magic values and entry types follow ManagedDedup/DedupReparsePointParser.cs
+ *	in this repository.
+ */
+
+#define DEDUP_ENTRY_CHUNK_BLOB	13
+#define DEDUP_ENTRY_GUID	12
+
+#define DEDUP103_MAX_ENTRIES	32
+
+struct dedup103_entries {
+	struct DEDUP_REPARSE_ENTRY ent[DEDUP103_MAX_ENTRIES];
+	int n;
+};
+
+static BOOL dedup103_outer_magic(le32 t)
+{
+	u32 v;
+
+	v = le32_to_cpu(t);
+	return (v == 0x70526546 || v == 0x70526252 || v == 0x70526444);
+}
+
+/*
+ *	Find n >= 8 such that crc32(rest, n) == want (chunk inner CRC).
+ */
+
+static BOOL dedup103_crc_span(const u8 *rest, size_t restmax, le32 want,
+			size_t *out_len)
+{
+	size_t n;
+	le32 got;
+
+	for (n = 8; n <= restmax; n++) {
+		got = crc32(rest, (int)n);
+		if (got == want) {
+			*out_len = n;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+static BOOL dedup103_get_le32(const u8 *p, le32 *out)
+{
+	memcpy(out, p, sizeof(le32));
+	return TRUE;
+}
+
+/*
+ *	Convert on-disk DedupReparseEntry (ManagedDedup layout) to the
+ *	legacy struct used by dedup_read_from_entry().
+ */
+
+static void dedup103_wire64_to_entry(const u8 *b,
+			struct DEDUP_REPARSE_ENTRY *e)
+{
+	memcpy(e, b, sizeof(struct DEDUP_REPARSE_ENTRY));
+}
+
+static void dedup103_walk_inner(const u8 *inner, size_t inner_len,
+		le32 outer_type, struct dedup103_entries *acc, int depth);
+
+static void dedup103_walk_outer(const u8 *blob, size_t blob_len,
+		struct dedup103_entries *acc, int depth)
+{
+	le32 ot;
+	le32 oc;
+	const u8 *rest;
+	size_t restmax;
+	size_t inner_len;
+	const u8 *inner;
+
+	if (depth > 12 || blob_len < 8)
+		return;
+	dedup103_get_le32(blob, &ot);
+	dedup103_get_le32(blob + 4, &oc);
+	if (!dedup103_outer_magic(ot))
+		return;
+	rest = blob + 8;
+	restmax = blob_len - 8;
+	if (!dedup103_crc_span(rest, restmax, oc, &inner_len))
+		return;
+	if (inner_len < 8)
+		return;
+	inner = rest;
+	dedup103_walk_inner(inner, inner_len, ot, acc, depth + 1);
+}
+
+static void dedup103_walk_inner(const u8 *inner, size_t inner_len,
+		le32 outer_type, struct dedup103_entries *acc, int depth)
+{
+	u16 num_ent;
+	const u8 *p;
+	int i;
+	u16 typ;
+	u16 esz;
+	u32 off;
+	size_t aoff;
+	size_t asz;
+	const u8 *sub;
+	const u8 *blob64;
+	le32 magic4;
+
+	if (depth > 12 || inner_len < 8 || acc->n >= DEDUP103_MAX_ENTRIES)
+		return;
+	num_ent = le16_to_cpu(*(le16*)(inner + 6));
+	if (inner_len < 8)
+		return;
+	p = inner + 8;
+	for (i = 0; i < (int)num_ent; i++) {
+		if ((size_t)(p - inner) + 8 > inner_len)
+			break;
+		typ = le16_to_cpu(*(le16*)p);
+		esz = le16_to_cpu(*(le16*)(p + 2));
+		off = le32_to_cpu(*(le32*)(p + 4));
+		p += 8;
+		if (typ != DEDUP_ENTRY_CHUNK_BLOB)
+			continue;
+		aoff = off;
+		asz = esz;
+		if (aoff >= 8 && (aoff - 8) + 4 <= inner_len) {
+			dedup103_get_le32(inner + aoff - 8, &magic4);
+			if (dedup103_outer_magic(magic4)) {
+				aoff -= 8;
+				asz += 8;
+			}
+		}
+		if (aoff + asz > inner_len)
+			asz = inner_len - aoff;
+		sub = inner + aoff;
+		if (le32_to_cpu(outer_type) == 0x70526444 && esz == 64) {
+			if ((size_t)off >= 8
+			    && (size_t)(off - 8) + 64 <= inner_len) {
+				blob64 = inner + off - 8;
+				dedup103_wire64_to_entry(blob64,
+					&acc->ent[acc->n]);
+				acc->n++;
+			}
+			continue;
+		}
+		if (asz >= 8) {
+			dedup103_get_le32(sub, &magic4);
+			if (dedup103_outer_magic(magic4))
+				dedup103_walk_outer(sub, asz, acc, depth);
+			else
+				dedup103_walk_inner(sub, asz, outer_type, acc,
+						depth + 1);
+		}
+	}
+}
+
+/*
+ *	Locate chunk store GUID in the top-level FeRp chunk (type 12).
+ */
+
+static BOOL dedup103_scan_guid(const u8 *inner, size_t inner_len,
+			char *guid37)
+{
+	u16 num_ent;
+	const u8 *p;
+	int i;
+	u16 typ;
+	u16 esz;
+	u32 off;
+	GUID g;
+
+	if (inner_len < 8)
+		return FALSE;
+	num_ent = le16_to_cpu(*(le16*)(inner + 6));
+	p = inner + 8;
+	for (i = 0; i < (int)num_ent; i++) {
+		if ((size_t)(p - inner) + 8 > inner_len)
+			break;
+		typ = le16_to_cpu(*(le16*)p);
+		esz = le16_to_cpu(*(le16*)(p + 2));
+		off = le32_to_cpu(*(le32*)(p + 4));
+		p += 8;
+		if (typ != DEDUP_ENTRY_GUID || esz != sizeof(GUID))
+			continue;
+		/*
+		 *	Like nested chunk blobs, GUID data offsets sometimes
+		 *	skip an 8-byte prefix (FeRp store GUID at off-8).
+		 */
+		if (off >= 8)
+			off -= 8;
+		if ((size_t)off + sizeof(GUID) > inner_len)
+			continue;
+		memcpy(&g, inner + off, sizeof(GUID));
+		if (ntfs_guid_to_mbs(&g, guid37))
+			return TRUE;
+	}
+	return FALSE;
+}
+
+/*
+ *	Parse format 0x0103 reparse user buffer (chunked FeRp/...) and read
+ *	via dedup_read_from_entry() (same chunk store as 0x0102).
+ */
+
+static int dedup_read_0103(ntfs_inode *ni, const REPARSE_POINT *reparse,
+			char *buf, size_t size, off_t offset)
+{
+	const u8 *pd;
+	u32 pdlen;
+	const u8 *p;
+	le32 ot;
+	le32 oc;
+	const u8 *rest;
+	size_t restmax;
+	size_t inner_len;
+	struct dedup103_entries acc;
+	char guid[37];
+	int j;
+
+	memset(&acc, 0, sizeof(acc));
+	pd = (const u8*)&reparse->reparse_data;
+	pdlen = le16_to_cpu(reparse->reparse_data_length);
+	if (pdlen < 12)
+		return -EINVAL;
+	p = pd + 4;
+	if (pdlen < 4 || pdlen - 4 < 8)
+		return -EINVAL;
+	dedup103_get_le32(p, &ot);
+	dedup103_get_le32(p + 4, &oc);
+	if (!dedup103_outer_magic(ot))
+		return -EOPNOTSUPP;
+	rest = p + 8;
+	restmax = pdlen - 4 - 8;
+	if (!dedup103_crc_span(rest, restmax, oc, &inner_len))
+		return -EIO;
+	if (!dedup103_scan_guid(rest, inner_len, guid))
+		return -EIO;
+	for (j = 0; guid[j]; j++)
+		guid[j] = toupper((unsigned char)guid[j]);
+	dedup103_walk_inner(rest, inner_len, ot, &acc, 0);
+	if (acc.n != 1) {
+		ntfs_log_error("dedup 0x103: expected 1 data entry, got %d\n",
+				acc.n);
+		if (acc.n < 1)
+			return -EOPNOTSUPP;
+	}
+	return (int)dedup_read_from_entry(ni, guid, &acc.ent[0], buf, size,
+			offset);
+}
+
+/*
  *		Read entry point
  *	Check input and start processing according to reparse data format.
  *	Returns the count of bytes read or a negative error code.
@@ -1382,6 +1633,10 @@ static int dedup_read(ntfs_inode *ni, const REPARSE_POINT *reparse,
 			break;
 		case 0x0102 :
 			res = dedup_read_long(ni, reparse,
+						buf, size, offset);
+			break;
+		case 0x0103 :
+			res = dedup_read_0103(ni, reparse,
 						buf, size, offset);
 			break;
 		default :
